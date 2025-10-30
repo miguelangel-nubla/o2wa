@@ -4,7 +4,7 @@ set -e
 # Create a non-root user
 NON_ROOT_USER=appuser
 
-if ! id "$NON_ROOT_USER" &>/dev/null; then
+if ! id "$NON_ROOT_USER" >/dev/null 2>&1; then
     echo "[entrypoint.sh] Creating non-root user..."
     adduser --disabled-password --gecos "" --uid 1000 "$NON_ROOT_USER"
 fi
