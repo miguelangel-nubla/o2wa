@@ -13,7 +13,7 @@ log() {
 # Create non-root user if it doesn't exist
 if ! id "$NON_ROOT_USER" >/dev/null 2>&1; then
     log "Creating non-root user '$NON_ROOT_USER'..."
-    adduser --disabled-password --gecos "" --uid 1000 "$NON_ROOT_USER"
+    useradd -m -u 1000 -s /bin/sh "$NON_ROOT_USER"
 else
     log "User '$NON_ROOT_USER' already exists."
 fi
