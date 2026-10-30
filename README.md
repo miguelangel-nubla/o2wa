@@ -84,6 +84,14 @@ Then, follow the on-screen guidance to authenticate and execute your defined com
 
 ---
 
+## Sessions and group changes
+
+A login lasts up to 24 hours, but o2wa only trusts the user's groups until the ID token expires. After that it renews the
+tokens with the refresh token and reads the groups again, so removing a user from a group (or expiring their account)
+takes effect at the next ID token expiry. If the provider refuses the refresh, the user logs in again.
+
+o2wa waits for the identity provider at startup, retrying discovery, so it can start before the provider does.
+
 ## Docker Deployment
 
 Sample config.example.yaml is provided in the repository. Deploy with:

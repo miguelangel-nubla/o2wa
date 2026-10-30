@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/coreos/go-oidc"
+	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/grokify/go-pkce"
 	"golang.org/x/oauth2"
 )
@@ -25,10 +25,16 @@ func (app *Server) oauth2Start(w http.ResponseWriter, r *http.Request, redirectU
 		return
 	}
 
-	flowData := oauthFlowData{State: state, Nonce: nonce, Redirect: redirectURL}
+	codeVerifier, err := pkce.NewCodeVerifier(96)
+	if err != nil {
+		handleError(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+
+	flowData := oauthFlowData{State: state, Nonce: nonce, Redirect: redirectURL, CodeVerifier: codeVerifier}
 	app.sessionManager.Put(r.Context(), app.oauthKey, flowData)
 
-	codeChallenge := pkce.CodeChallengeS256(app.codeVerifier)
+	codeChallenge := pkce.CodeChallengeS256(codeVerifier)
 
 	authURL := app.config.AuthCodeURL(
 		state,
@@ -41,7 +47,7 @@ func (app *Server) oauth2Start(w http.ResponseWriter, r *http.Request, redirectU
 }
 
 func (app *Server) setAuth(r *http.Request, data *authData) error {
-	app.sessionManager.Put(r.Context(), app.sessionKey, data)
+	app.sessionManager.Put(r.Context(), app.sessionKey, *data) // a value: auth() reads one back, also within this request
 	return nil
 }
 

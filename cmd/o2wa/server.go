@@ -3,6 +3,7 @@ package o2wa
 import (
 	"context"
 	"encoding/gob"
+	"errors"
 	"log"
 	"net/http"
 	"time"
@@ -35,16 +36,16 @@ type authData struct {
 }
 
 type oauthFlowData struct {
-	State    string
-	Nonce    string
-	Redirect string
+	State        string
+	Nonce        string
+	Redirect     string
+	CodeVerifier string // PKCE verifier of this login only
 }
 
 type Server struct {
 	ctx            context.Context
 	config         oauth2.Config
 	verifier       *oidc.IDTokenVerifier
-	codeVerifier   string
 	sessionManager *scs.SessionManager
 	sessionKey     string
 	oauthKey       string
@@ -59,18 +60,10 @@ func init() {
 func NewServer(clientID, clientSecret, oidcIssuer, callbackURL string) *Server {
 	ctx := context.Background()
 
-	provider, err := oidc.NewProvider(ctx, oidcIssuer)
-	if err != nil {
-		log.Fatal(err)
-	}
+	provider := discoverProvider(ctx, oidcIssuer)
 
 	oidcConfig := &oidc.Config{ClientID: clientID}
 	verifier := provider.Verifier(oidcConfig)
-
-	codeVerifier, err := pkce.NewCodeVerifier(96)
-	if err != nil {
-		log.Fatal(err)
-	}
 
 	sessionManager := scs.New()
 	sessionManager.Lifetime = 24 * time.Hour
@@ -79,9 +72,8 @@ func NewServer(clientID, clientSecret, oidcIssuer, callbackURL string) *Server {
 	sessionManager.Cookie.Secure = true
 
 	return &Server{
-		ctx:          ctx,
-		verifier:     verifier,
-		codeVerifier: codeVerifier,
+		ctx:      ctx,
+		verifier: verifier,
 		config: oauth2.Config{
 			ClientID:     clientID,
 			ClientSecret: clientSecret,
@@ -92,7 +84,57 @@ func NewServer(clientID, clientSecret, oidcIssuer, callbackURL string) *Server {
 		sessionManager: sessionManager,
 		sessionKey:     "authData",
 		oauthKey:       "oauthFlowData",
+		csrfKey:        "csrfToken",
 	}
+}
+
+// discoverProvider retries OIDC discovery until the issuer answers, so o2wa waits for an identity provider that
+// starts after it (at boot, for example) instead of exiting.
+func discoverProvider(ctx context.Context, issuer string) *oidc.Provider {
+	delay := time.Second
+	for {
+		provider, err := oidc.NewProvider(ctx, issuer)
+		if err == nil {
+			return provider
+		}
+		log.Printf("OIDC discovery failed, retrying in %s: %s", delay, err)
+		time.Sleep(delay)
+		if delay < 30*time.Second {
+			delay *= 2
+		}
+	}
+}
+
+// refreshAuth renews the session's tokens with the refresh token and re-reads the claims (groups included) from
+// the new ID token, so a group removal or an expired account takes effect when the ID token expires, not when
+// the session does. It fails when the provider gave no refresh token, refuses it, or returns no valid ID token for
+// the same subject: the caller then starts a new login.
+func (app *Server) refreshAuth(r *http.Request, data *authData) error {
+	if data.OAuth2Token.RefreshToken == "" {
+		return errors.New("no refresh token")
+	}
+	expired := data.OAuth2Token
+	expired.Expiry = time.Unix(1, 0) // force the token source to refresh
+	token, err := app.config.TokenSource(r.Context(), &expired).Token()
+	if err != nil {
+		return err
+	}
+	rawIDToken, ok := token.Extra("id_token").(string)
+	if !ok {
+		return errors.New("refresh returned no ID token")
+	}
+	idToken, err := app.verifier.Verify(r.Context(), rawIDToken)
+	if err != nil {
+		return err
+	}
+	var claims idTokenClaims
+	if err := idToken.Claims(&claims); err != nil {
+		return err
+	}
+	if claims.Sub != data.IDTokenClaims.Sub {
+		return errors.New("refreshed ID token is for another subject")
+	}
+	return app.setAuth(r, &authData{OAuth2Token: *token, IDTokenClaims: claims})
 }
 
 func (app *Server) Oauth2Callback(w http.ResponseWriter, r *http.Request) {
@@ -116,14 +158,19 @@ func (app *Server) Oauth2Callback(w http.ResponseWriter, r *http.Request) {
 	oauth2Token, err := app.config.Exchange(
 		app.ctx,
 		r.URL.Query().Get("code"),
-		oauth2.SetAuthURLParam(pkce.ParamCodeVerifier, app.codeVerifier),
+		oauth2.SetAuthURLParam(pkce.ParamCodeVerifier, oauthFlowData.CodeVerifier),
 	)
 	if err != nil {
 		handleError(w, "Failed to exchange token: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	idToken, err := app.verifier.Verify(app.ctx, oauth2Token.Extra("id_token").(string))
+	rawIDToken, ok := oauth2Token.Extra("id_token").(string)
+	if !ok {
+		handleError(w, "Token response has no ID token", http.StatusInternalServerError)
+		return
+	}
+	idToken, err := app.verifier.Verify(app.ctx, rawIDToken)
 	if err != nil {
 		handleError(w, "Failed to verify ID Token: "+err.Error(), http.StatusInternalServerError)
 		return
