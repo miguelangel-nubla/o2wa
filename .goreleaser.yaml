@@ -16,6 +16,10 @@ builds:
       - arm
     goarm:
       - 7
+    ignore:
+      # Go 1.26 dropped windows/arm (32-bit)
+      - goos: windows
+        goarch: arm
 dockers:
   -
     image_templates:
