@@ -25,7 +25,7 @@ func (app *Server) AuthMiddleware(requiredGroups []string, next http.HandlerFunc
 				http.Error(w, "Session expired: reload the page to log in again", http.StatusUnauthorized)
 				return
 			}
-			app.oauth2Start(w, r, r.URL.String())
+			app.oauth2Start(w, r, r.URL.RequestURI(), false)
 			return
 		}
 

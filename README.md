@@ -92,6 +92,10 @@ takes effect at the next ID token expiry. If the provider refuses the refresh, t
 
 o2wa waits for the identity provider at startup, retrying discovery, so it can start before the provider does.
 
+Sessions live in memory, so a restart logs everyone out; the next page load logs in again (silently, when the
+provider still has a session). A login interrupted that way, started in another browser, or a reloaded callback URL
+does not end in an error: o2wa takes the user to the page they wanted, through one new login if needed.
+
 ## Docker Deployment
 
 Sample config.example.yaml is provided in the repository. Deploy with:
