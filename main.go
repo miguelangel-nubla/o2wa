@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -35,27 +36,7 @@ func main() {
 	app := o2wa.NewServer(config.ClientID, config.ClientSecret, config.OidcIssuer, config.CallbackURL)
 
 	for _, endpoint := range config.Endpoints {
-		handler := func(e o2wa.Endpoint) http.HandlerFunc {
-			return func(w http.ResponseWriter, r *http.Request) {
-				// If it's a GET request, serve the HTML file
-				if r.Method == http.MethodGet {
-					app.HandleCommandConfirm(w, r, e)
-					return
-				}
-
-				// If it's a POST request, handle the command
-				if r.Method == http.MethodPost {
-					app.HandleCommandRun(w, r, e)
-					return
-				}
-			}
-		}(endpoint)
-
-		if endpoint.Public {
-			http.HandleFunc(endpoint.Path, handler)
-		} else {
-			http.HandleFunc(endpoint.Path, app.AuthMiddleware(endpoint.RequiredGroups, handler))
-		}
+		http.HandleFunc(endpoint.Path, app.Handler(endpoint))
 	}
 
 	u, err := url.Parse(config.CallbackURL)
@@ -68,8 +49,9 @@ func main() {
 	http.HandleFunc(u.Path, app.Oauth2Callback)
 
 	server := &http.Server{
-		Addr:    config.ListenAddr,
-		Handler: app.SessionMiddleware(http.DefaultServeMux),
+		Addr:              config.ListenAddr,
+		Handler:           app.SessionMiddleware(http.DefaultServeMux),
+		ReadHeaderTimeout: 10 * time.Second, // no write timeout: command output streams as long as the command runs
 	}
 
 	if config.TLSCert != "" && config.TLSKey != "" {

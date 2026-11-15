@@ -16,6 +16,7 @@ func (app *Server) EndpointValues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set the content type and write the JSON response
+	noStore(w) // holds the CSRF token
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(userInfoJSON)
 }

@@ -22,6 +22,8 @@ endpoints:
     htmlFile: "custom.html"
   - path: "/get-file"
     binaryOutput: true
+    contentType: "image/png"
+    fileName: "file.png"
     command:
       - "cat"
       - "file.png"

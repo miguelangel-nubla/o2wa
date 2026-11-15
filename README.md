@@ -84,6 +84,33 @@ Then, follow the on-screen guidance to authenticate and execute your defined com
 
 ---
 
+## Endpoints
+
+Each endpoint serves a page on GET (`htmlFile`, or a built-in page that asks for confirmation and shows the output)
+and runs its `command` on POST. Command arguments and pages are Go templates with `.GET`, `.POST`, `.AuthClaims`
+(nil on a public endpoint without a login), `.HTTPRequestHeaders` and `.CSRFToken`; pages are rendered with
+`html/template`, so request values end up escaped, not as markup. The command runs directly, never through a shell.
+
+Request values are untrusted input to the command:
+
+- A missing value renders as `<no value>`, never as an empty argument, so a script that defaults an empty argument
+  cannot be steered into its default. Reject `<no value>` in the script.
+- A value may start with `-`: put it after `--`, or validate it, so it cannot become an option.
+
+A POST needs the session's CSRF token: in the `X-CSRF-Token` header (fetch from the page's script), or in a
+`csrfToken` form field, so a plain HTML form can post and let the browser handle the response itself (open a
+downloaded file, install a profile):
+
+```html
+<form method="post" action="/get-file"><input type="hidden" name="csrfToken" value="{{.CSRFToken}}">
+  <button>Download</button></form>
+```
+
+By default the output streams as NDJSON lines (`{"timestamp","source":"stdout"|"stderr","text"}`). With
+`binaryOutput: true`, stdout is the response body: `contentType` sets its media type (default
+`application/octet-stream`) and `fileName` makes it a download with that name. stderr is logged. Responses are sent
+with `Cache-Control: no-store`.
+
 ## Sessions and group changes
 
 A login lasts up to 24 hours, but o2wa only trusts the user's groups until the ID token expires. After that it renews the
@@ -95,6 +122,10 @@ o2wa waits for the identity provider at startup, retrying discovery, so it can s
 Sessions live in memory, so a restart logs everyone out; the next page load logs in again (silently, when the
 provider still has a session). A login interrupted that way, started in another browser, or a reloaded callback URL
 does not end in an error: o2wa takes the user to the page they wanted, through one new login if needed.
+
+The session cookie is `SameSite=Strict`: a link from another site opens o2wa without the session, so it cannot run a
+page's command on load as the user. This needs the identity provider on the same site (registrable domain) as o2wa;
+otherwise the redirect back to the callback arrives without the cookie and the login cannot finish.
 
 ## Docker Deployment
 
@@ -129,7 +160,7 @@ Your script will execute before `o2wa`, ensuring the necessary tools or configur
 
 `o2wa` might interact with services using certificates from a private/internal CA. For smooth, secure interactions, trust these certificates.
 
-For Docker deployments, mount your CA certificates at `/trusted-ca-certs`:
+For Docker deployments, mount your CA certificates (`.crt` files) at `/trusted-ca-certs`:
 
 ```bash
 docker run \

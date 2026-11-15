@@ -95,14 +95,14 @@
                         }
                     });
 
-                    const contentType = response.headers.get('Content-Type');
+                    const contentType = response.headers.get('Content-Type') || '';
 
                     if (contentType.includes('application/x-ndjson')) {
                         await handleNDJSONStream(response);
-                    } else if (contentType.includes('application/octet-stream')) {
-                        await downloadBinaryFile(response);
+                    } else if (!response.ok || contentType.startsWith('text/plain')) {
+                        await showResponseAsIs(response); // errors come as text/plain
                     } else {
-                        await showResponseAsIs(response);
+                        await downloadBinaryFile(response); // binaryOutput, whatever its contentType
                     }
                 } catch (error) {
                     console.error("Error:", error);
@@ -165,9 +165,11 @@
             // Download binary file
             const downloadBinaryFile = async (response) => {
                 const blob = await response.blob();
+                const disposition = response.headers.get('Content-Disposition') || '';
+                const name = /filename="?([^";]+)"?/.exec(disposition);
                 const a = document.createElement('a');
                 a.href = URL.createObjectURL(blob);
-                a.download = 'downloaded_file';
+                a.download = name ? name[1] : 'downloaded_file';
                 a.style.display = 'none';
                 document.body.appendChild(a);
                 a.click();
@@ -185,27 +187,22 @@
             // Function that mimics the `confirm` but asynchronously
             function asyncConfirm(message) {
                 return new Promise((resolve) => {
+                    // Built with textContent: the message holds the URL, which must not become markup.
                     const modal = document.createElement('div');
-                    modal.innerHTML = `
-                        <div class="modal-bg">
-                            <div class="modal">
-                                <p>${message}</p>
-                                <button id="confirmYes">Yes</button>
-                                <button id="confirmNo">No</button>
-                            </div>
-                        </div>
-                    `;
+                    modal.className = 'modal-bg';
+                    const box = document.createElement('div');
+                    box.className = 'modal';
+                    const text = document.createElement('p');
+                    text.textContent = message;
+                    const answer = (label, value) => {
+                        const button = document.createElement('button');
+                        button.textContent = label;
+                        button.onclick = () => { modal.remove(); resolve(value); };
+                        return button;
+                    };
+                    box.append(text, answer('Yes', true), answer('No', false));
+                    modal.append(box);
                     document.body.appendChild(modal);
-                    
-                    modal.querySelector('#confirmYes').onclick = () => {
-                        modal.remove();
-                        resolve(true);
-                    };
-
-                    modal.querySelector('#confirmNo').onclick = () => {
-                        modal.remove();
-                        resolve(false);
-                    };
                 });
             }
 

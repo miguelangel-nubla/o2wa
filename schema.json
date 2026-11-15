@@ -21,10 +21,10 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["path", "command", "htmlFile"],
+        "required": ["path", "command"],
         "properties": {
           "path": { "type": "string" },
-          "protected": { "type": "boolean" },
+          "public": { "type": "boolean" },
           "requiredGroups": {
             "type": "array",
             "items": { "type": "string" }
@@ -34,6 +34,8 @@
             "items": { "type": "string" }
           },
           "binaryOutput": { "type": "boolean" },
+          "contentType": { "type": "string" },
+          "fileName": { "type": "string" },
           "htmlFile": { "type": "string" }
         }
       }
