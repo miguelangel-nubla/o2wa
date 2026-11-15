@@ -2,7 +2,9 @@ FROM ubuntu:latest
 
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 
-COPY o2wa /bin/o2wa
+# dockers_v2 puts each platform's binary at <os>/<arch>[/<variant>]/ in the build context
+ARG TARGETPLATFORM
+COPY $TARGETPLATFORM/o2wa /bin/o2wa
 COPY entrypoint.sh /entrypoint.sh
 
 ENV TRUSTED_CA_PATH=/trusted-ca-certs
