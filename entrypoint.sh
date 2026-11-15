@@ -21,8 +21,10 @@ fi
 # Add user-provided certificates if available
 if [ -n "$TRUSTED_CA_PATH" ] && [ -d "$TRUSTED_CA_PATH" ]; then
     log "Adding user-provided certificates from '$TRUSTED_CA_PATH'..."
-    find "$TRUSTED_CA_PATH" -type f -name '*.crt' -o -name '*.pem' | while read -r cert; do
-        cp "$cert" /usr/local/share/ca-certificates/
+    # update-ca-certificates only reads *.crt: a .pem file is installed under a .crt name
+    find "$TRUSTED_CA_PATH" -type f \( -name '*.crt' -o -name '*.pem' \) | while IFS= read -r cert; do
+        name=$(basename "$cert")
+        cp "$cert" "/usr/local/share/ca-certificates/${name%.*}.crt"
     done
     update-ca-certificates
 else

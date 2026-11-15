@@ -122,7 +122,7 @@ func TestBinaryOutput(t *testing.T) {
 	srv, client, token := endpointServer(t,
 		Endpoint{Path: "/file", Public: true, BinaryOutput: true, ContentType: "application/x-test", FileName: "my file.bin",
 			Command: []string{"sh", "-c", `head -c 300000 /dev/zero >&2; printf data`}},
-		Endpoint{Path: "/fail", Public: true, BinaryOutput: true, Command: []string{"sh", "-c", `echo nope >&2; exit 3`}})
+		Endpoint{Path: "/fail", Public: true, BinaryOutput: true, FileName: "f.bin", Command: []string{"sh", "-c", `echo nope >&2; exit 3`}})
 
 	// 300 KB on stderr would fill the pipe and block the command if nobody read it.
 	resp, body := run(t, client, srv.URL+"/file", token, nil)
@@ -137,5 +137,48 @@ func TestBinaryOutput(t *testing.T) {
 	resp, body = run(t, client, srv.URL+"/fail", token, nil)
 	if resp.StatusCode != http.StatusInternalServerError || !strings.Contains(body, "exit status 3") {
 		t.Errorf("failing binary command: got %d %q, want 500", resp.StatusCode, body)
+	}
+	if cd := resp.Header.Get("Content-Disposition"); cd != "" {
+		t.Errorf("failing binary command: the error would be saved as a file (Content-Disposition %q)", cd)
+	}
+}
+
+func TestTimeoutKillsTheCommand(t *testing.T) {
+	// The sleep child keeps the pipes open after sh is killed: the request must end anyway.
+	srv, client, token := endpointServer(t,
+		Endpoint{Path: "/slow", Public: true, Timeout: "300ms", Command: []string{"sh", "-c", "echo started; sleep 30; echo done"}},
+		Endpoint{Path: "/slowfile", Public: true, BinaryOutput: true, FileName: "f.bin", Timeout: "300ms", Command: []string{"sh", "-c", "sleep 30"}})
+	resp, body := run(t, client, srv.URL+"/slow", token, nil)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, `"text":"started"`) ||
+		!strings.Contains(body, "command timed out after 300ms") || strings.Contains(body, `"text":"done"`) {
+		t.Errorf("timeout: got %d %q", resp.StatusCode, body)
+	}
+	resp, body = run(t, client, srv.URL+"/slowfile", token, nil)
+	if resp.StatusCode != http.StatusInternalServerError || !strings.Contains(body, "timed out after 300ms") {
+		t.Errorf("binary timeout: got %d %q, want 500", resp.StatusCode, body)
+	}
+	if err := (Endpoint{Path: "/x", Timeout: "soon"}).Validate(); err == nil {
+		t.Errorf("an invalid timeout must fail validation")
+	}
+}
+
+func TestResponsesHideCredentialsAndForbidFraming(t *testing.T) {
+	srv, client, _ := endpointServer(t)
+	resp, _ := get(t, client, srv.URL+"/page")
+	if resp.Header.Get("X-Frame-Options") != "DENY" || !strings.Contains(resp.Header.Get("Content-Security-Policy"), "frame-ancestors 'none'") ||
+		resp.Header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Errorf("page headers: %v", resp.Header)
+	}
+	app := NewServer("client", "secret", newFakeIssuer(t).srv.URL, "https://app/callback")
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Cookie", "__Host-session=abc")
+	req.Header.Set("Authorization", "Bearer abc")
+	req.Header.Set("X-Other", "kept")
+	var vars templateVariables
+	app.SessionMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		vars = app.templateVariables(w, r)
+	})).ServeHTTP(httptest.NewRecorder(), req)
+	if _, ok := vars.HTTPRequestHeaders["Cookie"]; ok || vars.HTTPRequestHeaders["Authorization"] != "" || vars.HTTPRequestHeaders["X-Other"] != "kept" {
+		t.Errorf("request headers given to templates: %v", vars.HTTPRequestHeaders)
 	}
 }

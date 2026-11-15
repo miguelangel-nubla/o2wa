@@ -30,7 +30,7 @@ func (app *Server) AuthMiddleware(requiredGroups []string, next http.HandlerFunc
 		}
 
 		if !app.requireGroups(userInfo, requiredGroups) {
-			http.Error(w, "Unauthorized: insufficient group permissions", http.StatusUnauthorized)
+			http.Error(w, "Forbidden: insufficient group permissions", http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -38,5 +38,12 @@ func (app *Server) AuthMiddleware(requiredGroups []string, next http.HandlerFunc
 }
 
 func (a *Server) SessionMiddleware(handler http.Handler) http.Handler {
-	return a.sessionManager.LoadAndSave(handler)
+	return a.sessionManager.LoadAndSave(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// No page may be framed: a page of another site (or of a sibling host, which SameSite=Strict lets through)
+		// cannot overlay the confirmation of a command.
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		handler.ServeHTTP(w, r)
+	}))
 }

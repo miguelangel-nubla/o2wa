@@ -21,7 +21,7 @@ func (app *Server) EndpointValues(w http.ResponseWriter, r *http.Request) {
 	w.Write(userInfoJSON)
 }
 
-// create a EndpointLogout function that will be used to log out the user
+// EndpointLogout ends this application's session.
 func (app *Server) EndpointLogout(w http.ResponseWriter, r *http.Request) {
 	// Clear the session cookie
 	err := app.sessionManager.Destroy(r.Context())
@@ -30,6 +30,8 @@ func (app *Server) EndpointLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Redirect to the home page
-	http.Redirect(w, r, "/", http.StatusFound)
+	// No redirect to a page: it would start a new login, which the provider's own session completes silently.
+	noStore(w)
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Write([]byte("Logged out of this application. The identity provider's session is not ended here.\n"))
 }

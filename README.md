@@ -10,7 +10,7 @@ This tool transforms CLI workflows into web actions while leveraging the securit
   
 2. **Robust Security**: OAuth2.0 and OIDC integration ensure the secure execution of web-based commands.
 
-3. **Dynamic Endpoints**: The server adapts web endpoints to commands via a JSON configuration, ensuring flexibility without altering the core code.
+3. **Dynamic Endpoints**: The server adapts web endpoints to commands via a YAML configuration, ensuring flexibility without altering the core code.
 
 4. **Interactive Feedback**: Get HTML feedback for every command executed through the web, enhancing the user experience.
 
@@ -64,6 +64,10 @@ Ensure you update the OAuth2 endpoint URLs, client credentials, and define any c
 
 Use the provided /public endpoint that runs `echo Hello world!` as a starting point.
 
+The configuration is checked at startup: an unknown or misspelled key stops o2wa instead of being ignored (a
+misspelled `requiredGroups` would otherwise leave an endpoint open to every logged-in user). An endpoint that is not
+`public` and has no `requiredGroups` is open to every user the identity provider lets log in.
+
 ### Step 3: Launch `o2wa`
 
 With everything configured, you can start `o2wa`:
@@ -108,8 +112,17 @@ downloaded file, install a profile):
 
 By default the output streams as NDJSON lines (`{"timestamp","source":"stdout"|"stderr","text"}`). With
 `binaryOutput: true`, stdout is the response body: `contentType` sets its media type (default
-`application/octet-stream`) and `fileName` makes it a download with that name. stderr is logged. Responses are sent
-with `Cache-Control: no-store`.
+`application/octet-stream`) and `fileName` makes it a download with that name. stderr is logged. A command that
+fails before printing anything answers with a plain 500 error, not with a file. Responses are sent with
+`Cache-Control: no-store`.
+
+An endpoint's `timeout` (a Go duration such as `60s`) kills a command that runs longer; without it a command may
+run forever. The command is not tied to the request: it finishes even if the browser goes away.
+
+Pages and `/values` get the request headers except `Cookie` and `Authorization`. Every response forbids framing.
+
+A logged-in user without the endpoint's groups gets 403. `/logout` ends the o2wa session only, not the identity
+provider's.
 
 ## Sessions and group changes
 
@@ -160,7 +173,7 @@ Your script will execute before `o2wa`, ensuring the necessary tools or configur
 
 `o2wa` might interact with services using certificates from a private/internal CA. For smooth, secure interactions, trust these certificates.
 
-For Docker deployments, mount your CA certificates (`.crt` files) at `/trusted-ca-certs`:
+For Docker deployments, mount your CA certificates (PEM, as `.crt` or `.pem` files) at `/trusted-ca-certs`:
 
 ```bash
 docker run \

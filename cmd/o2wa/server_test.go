@@ -137,8 +137,8 @@ func TestExpiredClaimsAreRefreshed(t *testing.T) {
 	// The provider dropped the user from the group: the next expiry must enforce it.
 	f.groups = nil
 	srv, client = serve(t, app, expiredSession("refresh-1", "admins"))
-	if code, _ := post(t, client, srv.URL+"/cmd"); code != http.StatusUnauthorized {
-		t.Fatalf("group removed at the provider: got %d, want 401", code)
+	if code, _ := post(t, client, srv.URL+"/cmd"); code != http.StatusForbidden {
+		t.Fatalf("group removed at the provider: got %d, want 403", code)
 	}
 }
 

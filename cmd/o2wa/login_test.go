@@ -47,7 +47,7 @@ func get(t *testing.T, client *http.Client, u string) (*http.Response, string) {
 func sessionCookie(client *http.Client, base string) string {
 	u, _ := url.Parse(base)
 	for _, c := range client.Jar.Cookies(u) {
-		if c.Name == "session" {
+		if c.Name == "__Host-session" {
 			return c.Value
 		}
 	}

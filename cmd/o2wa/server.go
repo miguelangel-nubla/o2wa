@@ -72,6 +72,8 @@ func NewServer(clientID, clientSecret, oidcIssuer, callbackURL string) *Server {
 	// redirect back to the callback comes without the cookie and the login cannot finish.
 	sessionManager.Cookie.SameSite = http.SameSiteStrictMode
 	sessionManager.Cookie.Secure = true
+	// __Host-: browsers only accept the cookie from this host itself, so a sibling host cannot plant a session.
+	sessionManager.Cookie.Name = "__Host-session"
 
 	return &Server{
 		verifier: verifier,
@@ -191,6 +193,7 @@ func (app *Server) Oauth2Callback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	app.sessionManager.Remove(r.Context(), app.oauthKey)
+	app.sessionManager.Remove(r.Context(), app.csrfKey) // a CSRF token known before the login is worth nothing after it
 	// A new session token for the logged-in session: a token planted or seen before the login is worth nothing.
 	if err := app.sessionManager.RenewToken(r.Context()); err != nil {
 		handleError(w, "Internal error", http.StatusInternalServerError)

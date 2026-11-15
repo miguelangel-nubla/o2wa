@@ -73,6 +73,8 @@ func loadConfig(filename string) Config {
 	// Load the YAML content
 	var config Config
 	decoder := yaml.NewDecoder(file)
+	// A misspelled key must fail the start: ignored, "requiredGroup" would leave an endpoint open to every login.
+	decoder.KnownFields(true)
 	err = decoder.Decode(&config)
 	if err != nil {
 		log.Fatalf("Failed to decode config file: %s", err)
@@ -101,5 +103,13 @@ func loadConfig(filename string) Config {
 		log.Fatal("Config validation failed")
 	}
 
+	for _, endpoint := range config.Endpoints {
+		if err := endpoint.Validate(); err != nil {
+			log.Fatalf("Config validation failed: %s", err)
+		}
+	}
+	if config.ListenAddr == "" {
+		config.ListenAddr = ":8080"
+	}
 	return config
 }

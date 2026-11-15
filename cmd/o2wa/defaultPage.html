@@ -5,7 +5,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Command Execution</title>
-    <link href="https://cdn.jsdelivr.net/gh/maxwell-k/dejavu-sans-mono-web-font@2.37/index.css" rel="stylesheet">
     <style>
         :root {
             color: white;
@@ -131,7 +130,7 @@
                             return resolve();
                         }
 
-                        buffer += decoder.decode(value);
+                        buffer += decoder.decode(value, { stream: true });
                         const lines = buffer.split('\n');
 
                         for (let i = 0; i < lines.length - 1; i++) {
@@ -155,7 +154,6 @@
 
             // Handle individual JSON object
             const handleJsonObject = (json) => {
-                console.log(json);
                 const lineDiv = document.createElement('div');
                 lineDiv.className = json.source;
                 lineDiv.textContent = json.text;

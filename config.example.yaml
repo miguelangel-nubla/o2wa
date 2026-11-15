@@ -12,6 +12,7 @@ endpoints:
       - "echo"
       - "Hello world!"
   - path: "/private"
+    timeout: "60s"
     command:
       - "echo"
       - "{{.AuthClaims.PreferredUsername}}"
