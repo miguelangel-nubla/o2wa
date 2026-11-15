@@ -11,18 +11,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-jose/go-jose/v3"
-	"github.com/go-jose/go-jose/v3/jwt"
+	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 	"golang.org/x/oauth2"
 )
 
-// fakeIssuer is a minimal OIDC provider: discovery, JWKS and a refresh_token grant that issues an ID token for
-// `sub` with `groups`.
+// fakeIssuer is a minimal OIDC provider: discovery, JWKS, an authorization_code grant for code "code-1" and a
+// refresh_token grant for "refresh-1", both issuing an ID token for `sub` with `groups` (and `nonce` for the code).
 type fakeIssuer struct {
 	srv    *httptest.Server
 	key    *rsa.PrivateKey
 	sub    string
 	groups []string
+	nonce  string
 }
 
 func newFakeIssuer(t *testing.T) *fakeIssuer {
@@ -44,27 +45,36 @@ func newFakeIssuer(t *testing.T) *fakeIssuer {
 		json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &key.PublicKey, KeyID: "k", Algorithm: "RS256", Use: "sig"}}})
 	})
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
-		if r.FormValue("grant_type") != "refresh_token" || r.FormValue("refresh_token") != "refresh-1" {
+		nonce := ""
+		switch {
+		case r.FormValue("grant_type") == "refresh_token" && r.FormValue("refresh_token") == "refresh-1":
+		case r.FormValue("grant_type") == "authorization_code" && r.FormValue("code") == "code-1" &&
+			r.FormValue("code_verifier") != "":
+			nonce = f.nonce
+		default:
 			http.Error(w, `{"error":"invalid_grant"}`, http.StatusBadRequest)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"access_token": "access-2", "token_type": "Bearer", "expires_in": 300, "refresh_token": "refresh-2",
-			"id_token": f.idToken(t, time.Now().Add(5*time.Minute)),
+			"id_token": f.idToken(t, time.Now().Add(5*time.Minute), nonce),
 		})
 	})
 	return f
 }
 
-func (f *fakeIssuer) idToken(t *testing.T, exp time.Time) string {
+func (f *fakeIssuer) idToken(t *testing.T, exp time.Time, nonce string) string {
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: f.key}, (&jose.SignerOptions{}).WithHeader("kid", "k"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	claims := map[string]any{"iss": f.srv.URL, "sub": f.sub, "aud": "client", "exp": exp.Unix(), "iat": time.Now().Unix(),
 		"preferred_username": "user", "groups": f.groups}
-	raw, err := jwt.Signed(signer).Claims(claims).CompactSerialize()
+	if nonce != "" {
+		claims["nonce"] = nonce
+	}
+	raw, err := jwt.Signed(signer).Claims(claims).Serialize()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +92,7 @@ func serve(t *testing.T, app *Server, data *authData) (*httptest.Server, *http.C
 	mux.HandleFunc("/cmd", app.AuthMiddleware([]string{"admins"}, func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ran"))
 	}))
+	mux.HandleFunc("/callback", app.Oauth2Callback)
 	srv := httptest.NewTLSServer(app.SessionMiddleware(mux)) // the session cookie is Secure
 	t.Cleanup(srv.Close)
 	client := srv.Client()
